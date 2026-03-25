@@ -1,1 +1,8 @@
-fastapi uvicorn[standard] sqlalchemy[asyncio] asyncpg pydantic-settings jinja2 python-multipart prometheus-client
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncpg
+pydantic-settings
+jinja2
+python-multipart
+prometheus-client
