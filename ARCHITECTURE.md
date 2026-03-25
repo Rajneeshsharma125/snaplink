@@ -1,10 +1,4 @@
-Don't paste that in GitHub — that's PowerShell syntax (`@" "@` and `Out-File`). It'll look broken in the GitHub editor.
 
-For GitHub, just paste the **clean markdown content** — no PowerShell wrapper:
-
----
-
-```
 # SnapLink Architecture
 
 ## Overview
@@ -44,8 +38,5 @@ SnapLink is a distributed URL shortener built with FastAPI, designed to handle h
 5. Returns short URL
 6. On redirect → Redis hit → instant response
 7. Click event published to Kafka asynchronously
-```
 
----
 
-Paste only this into the GitHub editor and commit!
