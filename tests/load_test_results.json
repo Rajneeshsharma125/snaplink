@@ -1,0 +1,20 @@
+{
+    "test_config": {
+        "url": "http://localhost:8000",
+        "target_rps": 1500,
+        "duration": 60
+    },
+    "summary": {
+        "total_duration_s": 60.1,
+        "total_requests": 90000,
+        "successful_requests": 90000,
+        "errored_requests": 0,
+        "requests_per_second": 1497.45
+    },
+    "latency_percentiles_ms": {
+        "p50": 128.97,
+        "p95": 174.24,
+        "p99": 228.52
+    },
+    "timestamp": "2026-02-20T23:20:42.249741+00:00"
+}

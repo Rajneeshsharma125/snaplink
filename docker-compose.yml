@@ -1,0 +1,221 @@
+version: '3.8'
+
+services:
+  db-shard-0:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: url_shortener
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-shard-0-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d url_shortener"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  db-shard-1:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: url_shortener
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - db-shard-1-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d url_shortener"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  db-shard-2:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: url_shortener
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+    volumes:
+      - db-shard-2-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d url_shortener"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL Exporters
+  postgres-exporter-0:
+    image: prometheuscommunity/postgres-exporter:latest
+    environment:
+      DATA_SOURCE_NAME: postgresql://user:password@db-shard-0:5432/url_shortener?sslmode=disable
+    ports:
+      - "9187:9187"
+    depends_on:
+      - db-shard-0
+
+  postgres-exporter-1:
+    image: prometheuscommunity/postgres-exporter:latest
+    environment:
+      DATA_SOURCE_NAME: postgresql://user:password@db-shard-1:5432/url_shortener?sslmode=disable
+    ports:
+      - "9188:9187"
+    depends_on:
+      - db-shard-1
+
+  postgres-exporter-2:
+    image: prometheuscommunity/postgres-exporter:latest
+    environment:
+      DATA_SOURCE_NAME: postgresql://user:password@db-shard-2:5432/url_shortener?sslmode=disable
+    ports:
+      - "9189:9187"
+    depends_on:
+      - db-shard-2
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis Exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    command: --redis.addr redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
+
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: redpanda
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+    command: redpanda start --node-id 0 --kafka-addr PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092 --advertise-kafka-addr PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092 --smp 1 --memory 1G --overprovisioned --set redpanda.enable_idempotence=true
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  redpanda-setup:
+    image: redpandadata/redpanda:latest
+    entrypoint: bash
+    command: -c "
+      sleep 20;
+      rpk topic create clicks --brokers redpanda:29092 || true;
+      rpk topic create new_urls --brokers redpanda:29092 || true;
+      "
+    depends_on:
+      - redpanda
+
+  app:
+    build: .
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --backlog 2048 --loop uvloop --http httptools
+    environment:
+      UVICORN_WORKERS: 4
+      UVICORN_BACKLOG: 2048
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      DB_SHARD_0_URL: postgresql+asyncpg://user:password@db-shard-0:5432/url_shortener
+      DB_SHARD_1_URL: postgresql+asyncpg://user:password@db-shard-1:5432/url_shortener
+      DB_SHARD_2_URL: postgresql+asyncpg://user:password@db-shard-2:5432/url_shortener
+    depends_on:
+      - db-shard-0
+      - db-shard-1
+      - db-shard-2
+      - redis
+      - redpanda
+      - redpanda-setup
+
+
+  worker:
+    build: .
+    command: python worker/analytics.py # Removed sleep 20
+    ports:
+      - "8001:8001" # Expose worker metrics port
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      PYTHONPATH: /app
+    depends_on:
+      - redpanda
+      - redpanda-setup # Ensure topics are created before worker starts
+
+  classifier:
+    build: .
+    command: python worker/classifier.py
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      HF_TOKEN: ${HF_TOKEN:-}
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: 1
+    depends_on:
+      - redpanda
+      - redpanda-setup
+      - db-shard-0
+      - db-shard-1
+      - db-shard-2
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command: --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    depends_on:
+      - app
+      - postgres-exporter-0
+      - postgres-exporter-1
+      - postgres-exporter-2
+      - redis-exporter
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - app
+
+volumes:
+  db-shard-0-data:
+  db-shard-1-data:
+  db-shard-2-data:
+  redis-data:
+  redpanda-data:
+  prometheus-data:
+  grafana-data:
