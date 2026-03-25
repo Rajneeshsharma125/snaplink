@@ -173,8 +173,3 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 - GitHub: [@Rajneeshsharma125](https://github.com/Rajneeshsharma125)
 - Email: rajneeshsharma45681@gmail.com
-```
-
----
-
-Paste this on GitHub, commit, and SnapLink is repo-ready. After Render deployment, just add the live URL under the badges at the top.
