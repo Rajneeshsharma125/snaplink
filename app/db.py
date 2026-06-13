@@ -6,10 +6,9 @@ Base = declarative_base()
 
 
 def _make_engine(url: str):
-    # ssl connect_args are omitted here so this config works for both
-    # local Docker (no SSL) and Render (SSL handled via the URL parameter).
-    # To enable SSL for a specific deployment, append ?ssl=require to the
-    # DATABASE_URL environment variable itself rather than hardcoding here.
+    # SSL is handled via the URL parameter, not hardcoded here.
+    # Render: append ?ssl=require to DATABASE_URL in the environment panel.
+    # Local Docker: no SSL needed, plain URL works as-is.
     return create_async_engine(
         url,
         pool_size=5,
@@ -20,13 +19,21 @@ def _make_engine(url: str):
     )
 
 
+# Render provides a single DATABASE_URL.
+# Local Docker provides DB_SHARD_0/1/2_URL for three separate instances.
+# .get() tries the per-shard var first; falls back to DATABASE_URL on Render.
+# Routing logic (consistent hashing) runs identically in both environments.
+_shard_0 = os.environ.get("DB_SHARD_0_URL") or os.environ["DATABASE_URL"]
+_shard_1 = os.environ.get("DB_SHARD_1_URL") or os.environ["DATABASE_URL"]
+_shard_2 = os.environ.get("DB_SHARD_2_URL") or os.environ["DATABASE_URL"]
+
 SHARD_ENGINES = {
-    "shard0": _make_engine(os.environ["DB_SHARD_0_URL"]),
-    "shard1": _make_engine(os.environ["DB_SHARD_1_URL"]),
-    "shard2": _make_engine(os.environ["DB_SHARD_2_URL"]),
+    "shard0": _make_engine(_shard_0),
+    "shard1": _make_engine(_shard_1),
+    "shard2": _make_engine(_shard_2),
 }
 
-# shard0 is used as the primary engine for table creation in lifespan
+# shard0 engine used for table creation in lifespan
 engine = SHARD_ENGINES["shard0"]
 
 
@@ -37,4 +44,3 @@ async def get_session(shard_name: str = "shard0"):
     )
     async with async_session() as session:
         yield session
-        
