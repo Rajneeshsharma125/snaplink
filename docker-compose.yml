@@ -140,12 +140,18 @@ services:
       DB_SHARD_1_URL: postgresql+asyncpg://user:password@db-shard-1:5432/url_shortener
       DB_SHARD_2_URL: postgresql+asyncpg://user:password@db-shard-2:5432/url_shortener
     depends_on:
-      - db-shard-0
-      - db-shard-1
-      - db-shard-2
-      - redis
-      - redpanda
-      - redpanda-setup
+      db-shard-0:
+        condition: service_healthy
+      db-shard-1:
+        condition: service_healthy
+      db-shard-2:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      redpanda-setup:
+        condition: service_completed_successfully
 
   worker:
     build: .
