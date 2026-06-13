@@ -135,6 +135,7 @@ services:
       UVICORN_WORKERS: 4
       UVICORN_BACKLOG: 2048
       KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      REDIS_URL: redis://redis:6379
       DB_SHARD_0_URL: postgresql+asyncpg://user:password@db-shard-0:5432/url_shortener
       DB_SHARD_1_URL: postgresql+asyncpg://user:password@db-shard-1:5432/url_shortener
       DB_SHARD_2_URL: postgresql+asyncpg://user:password@db-shard-2:5432/url_shortener
@@ -146,24 +147,29 @@ services:
       - redpanda
       - redpanda-setup
 
-
   worker:
     build: .
-    command: python worker/analytics.py # Removed sleep 20
+    command: python worker/analytics.py
     ports:
-      - "8001:8001" # Expose worker metrics port
+      - "8001:8001"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      DB_SHARD_0_URL: postgresql+asyncpg://user:password@db-shard-0:5432/url_shortener
+      DB_SHARD_1_URL: postgresql+asyncpg://user:password@db-shard-1:5432/url_shortener
+      DB_SHARD_2_URL: postgresql+asyncpg://user:password@db-shard-2:5432/url_shortener
       PYTHONPATH: /app
     depends_on:
       - redpanda
-      - redpanda-setup # Ensure topics are created before worker starts
+      - redpanda-setup
 
   classifier:
     build: .
     command: python worker/classifier.py
     environment:
       KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      DB_SHARD_0_URL: postgresql+asyncpg://user:password@db-shard-0:5432/url_shortener
+      DB_SHARD_1_URL: postgresql+asyncpg://user:password@db-shard-1:5432/url_shortener
+      DB_SHARD_2_URL: postgresql+asyncpg://user:password@db-shard-2:5432/url_shortener
       HF_TOKEN: ${HF_TOKEN:-}
       PYTHONPATH: /app
       PYTHONUNBUFFERED: 1
@@ -219,3 +225,4 @@ volumes:
   redpanda-data:
   prometheus-data:
   grafana-data:
+  
